@@ -3,6 +3,7 @@ use regex::Regex;
 use html_escape::decode_html_entities;
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
+use notify_rust::Notification;
 
 
 #[derive(Deserialize, Debug)]
@@ -24,7 +25,7 @@ fn clean_html(text: &str, re: &Regex) -> String {
 }
 
 fn check_keywords(sub: &str, com: &str, keywords: &[String]) -> Vec<String> {
-    let mut matches = vec![];
+    let mut matches: Vec<String> = vec![];
     let full_text: String = format!("{} {}", sub, com).to_lowercase();
     for keyword in keywords {
         if full_text.contains(keyword) {
@@ -34,15 +35,36 @@ fn check_keywords(sub: &str, com: &str, keywords: &[String]) -> Vec<String> {
     matches
 }
 
+fn error_notif<T>(e: T) where T: std::fmt::Display {
+    Notification::new()
+        .summary("4chan Monitor")
+        .body(&format!("Something is wrong: {}", e))
+        .timeout(notify_rust::Timeout::Milliseconds(5000))
+        .show()
+        .unwrap();
+}
+
 fn check_board(board: &str, keywords: &[String], re: &Regex, added: &mut Vec<u32>) {
-    let url = format!("https://a.4cdn.org/{}/catalog.json", board);
-    let response = reqwest::blocking::get(url).unwrap();
-    let deserlialize: Vec<Page> = response.json::<Vec<Page>>().unwrap();
+    let url: String = format!("https://a.4cdn.org/{}/catalog.json", board);
+    let response = match reqwest::blocking::get(url) {
+        Ok(res) => res,
+        Err(e) => {
+            error_notif(e);
+            return;
+        }
+    };
+    let deserlialize: Vec<Page> = match response.json::<Vec<Page>>() {
+        Ok(res) => res,
+        Err(e) => {
+            error_notif(e);
+            return;
+        }
+    };
 
     for page in deserlialize {
         for thread in page.threads {
             let number: u32 = thread.no;
-            let thread_url = format!("https://boards.4chan.org/{}/thread/{}", board, number);
+            let thread_url: String = format!("https://boards.4chan.org/{}/thread/{}", board, number);
             let subject: String = match thread.sub {
                 Some(sub) => clean_html(&sub, &re),
                 None => String::from(""),
@@ -55,14 +77,18 @@ fn check_board(board: &str, keywords: &[String], re: &Regex, added: &mut Vec<u32
 
             if !matched_keywords.is_empty() && !added.contains(&number){
                 for keyword in matched_keywords {
-                    println!("Keyword found: {} in {}", keyword, thread_url)
+                    Notification::new()
+                        .summary("4chan Monitor")
+                        .body(&format!("Keyword found: {} in {}", keyword, thread_url))
+                        .timeout(notify_rust::Timeout::Milliseconds(5000))
+                        .show()
+                        .unwrap();
                 }
                 added.push(number);
             }
         }
     }
 }
-
 
 
 fn main() {
@@ -72,6 +98,7 @@ fn main() {
         move || {
             let interval = time::Duration::from_secs(60);
             let re = Regex::new(r"<.*?>").unwrap();
+            // this is for testing; remove later
             let keywords = [String::from("gentoo")];
             let mut added: Vec<u32> = vec![];
             while *is_background_running.lock().unwrap() {
