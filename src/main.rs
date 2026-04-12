@@ -2,7 +2,7 @@ use serde::Deserialize;
 use regex::Regex;
 use html_escape::decode_html_entities;
 use std::collections::HashSet;
-use std::{thread, time};
+use std::{thread, time, env};
 use std::sync::{Arc, Mutex};
 use notify_rust::Notification;
 use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent}};
@@ -67,7 +67,7 @@ fn check_keywords(sub: &str, com: &str, keywords: &[String]) -> Vec<String> {
     let full_text: String = format!("{} {}", sub, com).to_lowercase();
     let matches: Vec<String> = keywords
         .iter()
-        .filter(|keyword| full_text.contains(*keyword))
+        .filter(|keyword: &&String| full_text.contains(*keyword))
         .cloned()
         .collect();
     matches
@@ -76,7 +76,7 @@ fn check_keywords(sub: &str, com: &str, keywords: &[String]) -> Vec<String> {
 fn error_notif<T>(e: T) where T: std::fmt::Display {
     Notification::new()
         .summary("4chan Monitor")
-        .body(&format!("Something is wrong: {}", e))
+        .body(&format!("ERROR: {}", e))
         .sound_name("Default")
         .timeout(notify_rust::Timeout::Milliseconds(5000))
         .show()
@@ -143,18 +143,31 @@ fn create_icon() -> tray_icon::Icon {
 }
 
 fn main() {
-    let read_config: String = std::fs::read_to_string("config.toml")
-        .or_else(|_|{
-            // gets the aboslute path no matter where the program is started if relative returns an err
-            let mut path = std::env::current_exe().unwrap();
-            // removes the .exe from the path, then adds the config filename
-            path.pop();
-            path.push("config.toml");
-            std::fs::read_to_string(path)
-        
-        })
-        .expect("Failed to find config.toml");
-    let config: Config = toml::from_str(&read_config).unwrap();
+    let args: Vec<String> = std::env::args().collect();
+
+    let abc = args;
+
+    
+    let config_path = if std::path::Path::new("config.toml").exists() {
+        std::path::PathBuf::from("config.toml")
+    } else {
+        // gets the aboslute path no matter where the program is started if relative returns an err
+        let mut path = std::env::current_exe().unwrap();
+        // removes the .exe from the path, then adds the config filename
+        path.pop();
+        path.push("config.toml");
+        path
+    };
+    
+    let read_config: String = std::fs::read_to_string(&config_path).expect("Failed to find config.toml");
+
+    let mut config: Config = match toml::from_str(&read_config) {
+        Ok(res) => res,
+        Err(_) => {
+            error_notif("Unable to fetch config from config.toml; make sure it's not empty");
+            return;
+        }
+    };
 
     let is_main_running: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
     let is_background_running: Arc<Mutex<bool>> = Arc::clone(&is_main_running);
@@ -165,7 +178,26 @@ fn main() {
             // hashset for 0(1) lookup speed
             let mut checked: HashSet<u32> = HashSet::new();
 
+            let mut init_timestamp = std::fs::metadata(&config_path).unwrap().modified().unwrap();
+
             while *is_background_running.lock().unwrap() {
+                let current_timestamp = std::fs::metadata(&config_path).unwrap().modified().unwrap();
+
+                if init_timestamp != current_timestamp {
+                    // this var will after in the next iteration (cont)
+                    let new_read_config = std::fs::read_to_string(&config_path).expect("Failed to find config.toml");
+
+                    // (cont) but config will keep its value because of owned String
+                    match toml::from_str(&new_read_config) {
+                        // reassign config ONLY if the toml parse returns Ok
+                        Ok(res) => config = res,
+                        Err(_) => {
+                            error_notif("Unable to fetch config from config.toml; reverting back to your old config");
+                        }
+                    };
+                    init_timestamp = current_timestamp
+                }
+
                 for board in config.boards.iter() {
                     check_board(&board.name, &board.keywords, &re, &mut checked);
                     thread::sleep(time::Duration::from_secs(2))
