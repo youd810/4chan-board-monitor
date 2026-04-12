@@ -5,20 +5,23 @@ use std::collections::HashSet;
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
 use notify_rust::Notification;
-use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem}};
-use tray_icon::menu::MenuEvent;
+use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent}};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{EventLoop, ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
 #[derive(Deserialize)]
-// WIP
 struct Board {
     name: String,
     keywords: Vec<String> 
 }
 
+#[derive(Deserialize)]
+struct Config {
+    interval: u64,
+    boards: Vec<Board>
+}
 
 #[derive(Deserialize, Debug)]
 // parse the reqwest json with struct
@@ -61,13 +64,12 @@ fn clean_html(text: &str, re: &Regex) -> String {
 }
 
 fn check_keywords(sub: &str, com: &str, keywords: &[String]) -> Vec<String> {
-    let mut matches: Vec<String> = vec![];
     let full_text: String = format!("{} {}", sub, com).to_lowercase();
-    for keyword in keywords {
-        if full_text.contains(keyword) {
-            matches.push(keyword.to_string());
-        }
-    }
+    let matches: Vec<String> = keywords
+        .iter()
+        .filter(|keyword| full_text.contains(*keyword))
+        .cloned()
+        .collect();
     matches
 }
 
@@ -90,7 +92,7 @@ fn check_board(board: &str, keywords: &[String], re: &Regex, checked: &mut HashS
             return;
         }
     };
-    let deserlialize: Vec<Page> = match response.json::<Vec<Page>>() {
+    let deserialize: Vec<Page> = match response.json::<Vec<Page>>() {
         Ok(res) => res,
         Err(e) => {
             error_notif(e);
@@ -98,7 +100,7 @@ fn check_board(board: &str, keywords: &[String], re: &Regex, checked: &mut HashS
         }
     };
 
-    for page in deserlialize {
+    for page in deserialize {
         for thread in page.threads {
             let number: u32 = thread.no;
             
@@ -108,11 +110,11 @@ fn check_board(board: &str, keywords: &[String], re: &Regex, checked: &mut HashS
 
             let thread_url: String = format!("https://boards.4chan.org/{}/thread/{}", board, number);
             let subject: String = match thread.sub {
-                Some(sub) => clean_html(&sub, &re),
+                Some(sub) => clean_html(&sub, re),
                 None => String::from(""),
             };
             let comment: String = match thread.com {
-                Some(com) => clean_html(&com, &re),
+                Some(com) => clean_html(&com, re),
                 None => String::from(""),
             };
             let matched_keywords: Vec<String> = check_keywords(&subject, &comment, keywords,) ;
@@ -141,18 +143,33 @@ fn create_icon() -> tray_icon::Icon {
 }
 
 fn main() {
+    let read_config: String = std::fs::read_to_string("config.toml")
+        .or_else(|_|{
+            // gets the aboslute path no matter where the program is started if relative returns an err
+            let mut path = std::env::current_exe().unwrap();
+            // removes the .exe from the path, then adds the config filename
+            path.pop();
+            path.push("config.toml");
+            std::fs::read_to_string(path)
+        
+        })
+        .expect("Failed to find config.toml");
+    let config: Config = toml::from_str(&read_config).unwrap();
+
     let is_main_running: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
     let is_background_running: Arc<Mutex<bool>> = Arc::clone(&is_main_running);
     let _background_monitor = thread::spawn(
         move || {
-            let interval = time::Duration::from_secs(60);
-            let re = Regex::new(r"<.*?>").unwrap();
-            // this is for testing; remove later
-            let keywords = [String::from("gentoo")];
+            let interval = time::Duration::from_secs(config.interval);
+            let re: Regex = Regex::new(r"<.*?>").unwrap();
             // hashset for 0(1) lookup speed
             let mut checked: HashSet<u32> = HashSet::new();
+
             while *is_background_running.lock().unwrap() {
-                check_board("g", &keywords, &re, &mut checked);
+                for board in config.boards.iter() {
+                    check_board(&board.name, &board.keywords, &re, &mut checked);
+                    thread::sleep(time::Duration::from_secs(2))
+                }
                 thread::sleep(interval)
             }
         }
@@ -172,7 +189,7 @@ fn main() {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
-        // bind the main thread to the event loop and kill the program in its stead
+        // binds the main thread to the event loop, which will kill the program in its stead
         is_running: is_main_running,
         quit_id: quit_item.id().clone(),
     };

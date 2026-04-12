@@ -1,0 +1,10 @@
+interval = 60
+
+# an example for adding keywords for one board 
+# (do not include the # symbol for the real thing)
+# you need to do this for every board you want to add
+#
+# [[boards]]
+# name = "g"
+# keywords = ["gentoo", "debian"]  
+
