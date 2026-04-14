@@ -1,8 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use regex::Regex;
 use html_escape::decode_html_entities;
 use std::collections::HashSet;
-use std::{thread, time, env, io};
+use std::path::PathBuf;
+use std::{env, fs, io, thread, time};
 use std::sync::{Arc, Mutex};
 use notify_rust::Notification;
 use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent}};
@@ -11,13 +12,14 @@ use winit::event::WindowEvent;
 use winit::event_loop::{EventLoop, ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
-#[derive(Deserialize)]
+// (conv text to sruct, struct to text)
+#[derive(Deserialize, Serialize)]
 struct Board {
     name: String,
     keywords: Vec<String> 
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Config {
     interval: u64,
     boards: Vec<Board>
@@ -142,46 +144,67 @@ fn create_icon() -> tray_icon::Icon {
     tray_icon::Icon::from_rgba(img.into_raw(), w, h).unwrap()
 }
 
+fn clear_screen(){
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd").args(["/c", "cls"]).status().unwrap();
+    } else {
+        std::process::Command::new("clear").status().unwrap();
+    }
+}
+
 fn read_input() -> String {
     let mut input = String::new();
+    println!("");
     io::stdin().read_line(&mut input).expect("Failed to read input");
     input.trim().to_string()
 }
 
 fn read_num() -> Option<usize> {
+    // usize for indexing
     read_input().trim().parse::<usize>().ok()
 }
 
-fn display_boards(config: &mut Config) {
+fn display_boards(config: &mut Config, path: &PathBuf) {
     loop {
+        // TODO: ADD A SETTING FOR INTERVAL!
+        clear_screen(); // clears the display
+        println!("Added Boards:");
+        println!("");
         for (i, board) in config.boards.iter().enumerate() {
             println!("{}. {}", i+1, board.name);       
         }
         println!("");
         println!("{}. Add a board", config.boards.len() + 1);
         println!("{}. Delete a board", config.boards.len() + 2);
+        println!("{}. Exit", config.boards.len() + 3);
         match read_num() {
-            Some(num) if num >= 1 && num <= config.boards.len() => display_keywords(config, num - 1),
-            Some(num) if num == (config.boards.len() + 1) => add_board(config),
-            Some(num) if num == (config.boards.len() + 2) => delete_board(config),
+            Some(num) if num >= 1 && num <= config.boards.len() => display_keywords(config, num - 1, path),
+            Some(num) if num == (config.boards.len() + 1) => add_board(config, path),
+            Some(num) if num == (config.boards.len() + 2) => delete_board(config, path),
+            Some(num) if num == (config.boards.len() + 3) => {
+                clear_screen();
+                std::process::exit(0);
+            },
             _ => {
                 println!("Invalid input!");
+                thread::sleep( time::Duration::from_millis(250));
                 continue;
             },
         }
     }
 }
 
-fn add_board(config: &mut Config){
+fn add_board(config: &mut Config, path: &PathBuf){
     loop {
+        clear_screen();
         for board in config.boards.iter() {
             println!("{}", board.name);       
         }
         println!("");
-        println!("Input a board name ('g', 'v', etc. without the quotation mark)");
+        println!("Input a board name ('g', 'v', etc. without the quotation marks)");
         println!("input 'back' to go back");
-        let input = read_input();
-        let boards = [
+        let input: String = read_input();
+        let boards: [&str; 76] = [
             "a", "aco", "adv", "an", "b", "bant", "biz", "c", "cgl", "ck", "cm", "co", "d", "diy",
             "e", "f", "fit", "g", "gd", "gif", "h", "hc", "his", "hm", "hr", "i", "ic", "int", "jp",
             "k", "lgbt", "lit", "m", "mlp", "mu", "n", "news", "o", "out", "p", "po", "pol", "pw",
@@ -190,37 +213,51 @@ fn add_board(config: &mut Config){
             "wsg", "wsr", "x", "xs", "y", "3"
         ];
         if boards.contains(&input.as_str()) {
-            // how do i actually add the board?
+            // we push a struct since the content of boards is a vector of structs 
+            config.boards.push( Board{
+                name: input,
+                keywords: Vec::new(), 
+            });
+            save_config(config, path);
         } else if input == "back" {
             break;
         } else {
             println!("Invalid input!");
+            thread::sleep( time::Duration::from_millis(250));
             continue;
         }
     }
 }
 
-fn delete_board(config: &mut Config) {
+fn delete_board(config: &mut Config, path: &PathBuf) {
     loop {
+        clear_screen();
         for (i, board) in config.boards.iter().enumerate() {
             println!("{}. {}", i+1, board.name);  
         }
         println!("");
         println!("{}. Back", config.boards.len() + 1);
         match read_num() {
-            Some(num) if num >= 1 && num <= config.boards.len() => {}, // delete board 
+            Some(num) if num >= 1 && num <= config.boards.len() => {
+                config.boards.remove(num - 1);
+                save_config(config, path);
+            },
             Some(num) if num == (config.boards.len() + 1) => break,
             _ => {
                 println!("Invalid input!");
+                thread::sleep( time::Duration::from_millis(250));
                 continue;
             }
-        }
+        };
     }
 }
 
 
-fn display_keywords(config: &mut Config, board_idx: usize) {
+fn display_keywords(config: &mut Config, board_idx: usize, path: &PathBuf) {
     loop {
+        clear_screen();
+        println!("Added Keywords for /{}/:", config.boards[board_idx].name);
+        println!("");
         for keyword in config.boards[board_idx].keywords.iter() {
             println!("{}", keyword);
         }
@@ -229,54 +266,72 @@ fn display_keywords(config: &mut Config, board_idx: usize) {
         println!("2. Delete a keyword");
         println!("3. Back");
         match read_num() {
-            Some(num) if num == 1 => add_keyword(config, board_idx),
-            Some(num) if num == 2 => delete_keyword(config, board_idx),
+            Some(num) if num == 1 => add_keyword(config, board_idx, path),
+            Some(num) if num == 2 => delete_keyword(config, board_idx, path),
             Some(num) if num == 3 => break,
             _ => {
                 println!("Invalid input!");
+                thread::sleep( time::Duration::from_millis(250));
                 continue
             }
         }
     }
 }
 
-fn add_keyword(config: &mut Config, board_idx: usize) {
+fn add_keyword(config: &mut Config, board_idx: usize, path: &PathBuf) {
     loop {
+        clear_screen();
         for keyword in config.boards[board_idx].keywords.iter() {
             println!("{}", keyword);
         }
         println!("");
-        println!("Input a keyword (one word per input)");
+        println!("Input a keyword (multiple words are allowed)");
         println!("input '0' to go back");
-        let input = read_input();
+        let input: String = read_input();
         if input == "0" {
             break;
-        } else if input.contains(" "){
-            println!("1 word at a time please");
+        } else if input == "" {
+            println!("Invalid input!");
+            thread::sleep( time::Duration::from_millis(250));
             continue;
         } else {
-            // add the keyword
+            config.boards[board_idx].keywords.push(input);
+            save_config(config, path);
         }
     }
 }
 
-fn delete_keyword(config: &mut Config, board_idx: usize) {
+fn delete_keyword(config: &mut Config, board_idx: usize, path: &PathBuf) {
     loop {
+        clear_screen();
         for (i, keyword) in config.boards[board_idx].keywords.iter().enumerate() {
-            println!("{}. {}", i, keyword);
+            println!("{}. {}", i+1, keyword);
         }
         println!("");
         println!("{}. Back", config.boards[board_idx].keywords.len() + 1);
+        println!("");
         println!("Input the number of the word you wish to be deleted");
         match read_num() {
-            Some(num) if num >= 1 && num <= config.boards[board_idx].keywords.len() => {},
+            Some(num) if num >= 1 && num <= config.boards[board_idx].keywords.len() => {
+                config.boards[board_idx].keywords.remove(num - 1);
+                save_config(config, path);
+                println!("Config saved")
+            },
             Some (num) if num == (config.boards[board_idx].keywords.len() + 1) => break,
             _ => {
                 println!("Invalid input!");
+                thread::sleep( time::Duration::from_millis(250));
                 continue;
             },
-        }
+        };
     }
+}
+
+fn save_config(config: &mut Config, path: &PathBuf) {
+    let serialize = toml::to_string(config).unwrap();
+    fs::write(path, serialize).expect("Failed to save config");
+    println!("Config saved");
+    thread::sleep( time::Duration::from_millis(500));
 }
 
 fn main() {
@@ -284,13 +339,13 @@ fn main() {
             std::path::PathBuf::from("config.toml")
         } else {
             // gets the aboslute path no matter where the program is started if relative returns an err
-            let mut path = std::env::current_exe().unwrap();
+            let mut path = env::current_exe().unwrap();
             // removes the .exe from the path, then adds the config filename
             path.pop();
             path.push("config.toml");
             path
         };
-    let read_config: String = std::fs::read_to_string(&config_path).expect("Failed to find config.toml");
+    let read_config: String = fs::read_to_string(&config_path).expect("Failed to find config.toml");
     let mut config: Config = match toml::from_str(&read_config) {
         Ok(res) => res,
         Err(_) => {
@@ -302,7 +357,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 1 && args[1] == "config" {
-        display_boards(&mut config);
+        display_boards(&mut config, &config_path);
     } 
 
     else {
