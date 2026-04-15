@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "4chan-board-monitor"
-path = "src/main.rs"
+name = "monitor"
+path = "src/bin/main.rs"
+
+[[bin]]
+name = "config"
+path = "src/bin/cli.rs"
 
 
 [dependencies]

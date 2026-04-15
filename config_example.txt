@@ -1,4 +1,4 @@
-I added this since the example comment from config.toml will get yeeted eventually if you edit via CLI. Oh well. 
+I added this since the example comment from config.toml will get yeeted eventually if you edit the file using the CLI. Oh well. 
 
 # an example for manually adding keywords for one board 
 # (do not include the # symbol for the real thing)
