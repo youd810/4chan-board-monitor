@@ -17,7 +17,7 @@ Linux (Mint):
 # Installation
 
 ## For Windows
-- Download the ZIP file from Release.
+- Download the ZIP file from [Releases](https://github.com/youd810/4chan-board-monitor/releases).
 - Extract it somewhere.
 
 Installing the Rust compiler on Windows is painful but if you want to compile the source code yourself:
