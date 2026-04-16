@@ -2,7 +2,7 @@ interval = 30
 
 # this is a temp fix to prevent the toml parser from returning an err
 # remove this if you wish to manually edit this config file
-#boards = []
+boards = []
 
 # this is the correct example for manually adding keywords for one board 
 # (do not include the # symbol for the real thing)

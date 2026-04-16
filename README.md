@@ -2,15 +2,15 @@
 
 This program sends you a notification upon finding a 4chan thread with the corresponding keyword from the OP.
 
-### Example: 
+### Examples: 
 
 Windows:
 
-![Notify Windows](assets/notify-win.png)
+![Notify Windows](assets/notify-win.PNG)
 
 Linux (Mint):
 
-![Notify Linux](assets/notify-linux.png)
+![Notify Linux](assets/notify-linux.PNG)
 
 
 
