@@ -6,4 +6,4 @@ I added this since the example comment from config.toml will get yeeted eventual
 #
 # [[boards]]
 # name = "g"
-# keywords = ["gentoo", "debian"] 
+# keywords = ["gentoo", "what you're referring to as linux"] 

@@ -18,7 +18,7 @@ pub struct Config {
 }
 
 pub fn config_path() -> PathBuf {
-    let conf_path = if std::path::Path::new("config.toml").exists() {
+    if std::path::Path::new("config.toml").exists() {
         std::path::PathBuf::from("config.toml")
     } else {
         // gets the aboslute path no matter where the program is started if relative returns an err
@@ -27,6 +27,5 @@ pub fn config_path() -> PathBuf {
         path.pop();
         path.push("config.toml");
         path
-    };
-    conf_path
+    }
 }

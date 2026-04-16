@@ -1,10 +1,13 @@
-interval = 60
+interval = 30
 
-# an example for adding keywords for one board 
+# this is a temp fix to prevent the toml parser from returning an err
+# remove this if you wish to manually edit this config file
+#boards = []
+
+# this is the correct example for manually adding keywords for one board 
 # (do not include the # symbol for the real thing)
 # you need to do this for every board you want to add
 #
-# [[boards]]
-# name = "g"
-# keywords = ["gentoo", "debian"]  
-
+#[[boards]]
+#name = "g"
+#keywords = ["gentoo", "what you're referring to as linux"] 

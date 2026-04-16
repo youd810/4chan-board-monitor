@@ -38,6 +38,11 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop){}
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, _event: WindowEvent) {}
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // processes menu clicks on Linux
+        #[cfg(target_os = "linux")]
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
         // checks MenuEvent for an event
         if let Ok(event) = MenuEvent::receiver().try_recv() {
             // if it's true and it's from quit_item, the program will close
@@ -121,6 +126,8 @@ fn check_board(board: &str, keywords: &[String], re: &Regex, checked: &mut HashS
                             Notification::new()
                                 .summary("4chan Monitor")
                                 .body(&format!("Keyword found: {} in {}", keyword_clone, thread_url_clone))
+                                .action("default", "Open Thread")
+                                .sound_name("message-new-instant")
                                 .timeout(notify_rust::Timeout::Milliseconds(5000))
                                 .show()
                                 .unwrap()
@@ -134,6 +141,7 @@ fn check_board(board: &str, keywords: &[String], re: &Regex, checked: &mut HashS
                                     }
                                 });
                         });
+                        thread::sleep(time::Duration::from_millis(2000))
                     }
                     // wangblows doesn't support clickable notif with notify-rust
                     #[cfg(target_os = "windows")]
@@ -163,6 +171,10 @@ fn create_icon() -> tray_icon::Icon {
 
 fn main() {
     let config_path = config_path();
+    if !config_path.exists() {
+        let default_config = "interval = 60\n\n[[boards]]\nname = \"g\"\nkeywords = []\n";
+        std::fs::write(&config_path, default_config).unwrap();
+    }
     let read_config: String = fs::read_to_string(&config_path).expect("Failed to find config.toml");
     let mut config: Config = match toml::from_str(&read_config) {
         Ok(res) => res,
@@ -211,6 +223,9 @@ fn main() {
         }
     );
 
+    #[cfg(target_os = "linux")]
+        gtk::init().unwrap();
+
     // new(text, clickable, kb shortcut)
     let quit_item = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
@@ -223,7 +238,8 @@ fn main() {
         .unwrap();
     
     let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
+    // Poll consooms an ungodly amount of cpu
+    event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = App {
         // binds the main thread to the event loop, which will kill the program in its stead
         is_running: is_main_running,
